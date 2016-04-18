@@ -1,0 +1,2 @@
+#!/bin/bash -p
+autossh -R 20022:localhost:22 ssh-tunnel -g -f -N

@@ -1,0 +1,144 @@
+#! /bin/sh
+
+### BEGIN INIT INFO
+# Provides:		ssh_tunnel
+# Required-Start:       $local_fs $remote_fs $network $syslog $named
+# Required-Stop:        $local_fs $remote_fs $network $syslog $named
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	SSH Tunnel Daemon
+### END INIT INFO
+
+set -e
+
+# /etc/init.d/ssh_tunnel: start and stop the SSH Tunnel daemon
+
+#test -x /usr/sbin/ssh_tunnel || exit 0
+
+umask 022
+
+. /lib/lsb/init-functions
+
+# Are we running from init?
+run_by_init() {
+    ([ "$previous" ] && [ "$runlevel" ]) || [ "$runlevel" = S ]
+}
+
+check_for_no_start() {
+    # forget it if we're trying to start, and /etc/ssh/ssh_tunnel_not_to_be_run exists
+    if [ -e /etc/ssh/ssh_tunnel_not_to_be_run ]; then
+	if [ "$1" = log_end_msg ]; then
+	    log_end_msg 0 || true
+	fi
+	if ! run_by_init; then
+	    log_action_msg "SSH Tunnel Daemon not in use (/etc/ssh/ssh_tunnel_not_to_be_run)" || true
+	fi
+	exit 0
+    fi
+}
+
+check_dev_null() {
+    if [ ! -c /dev/null ]; then
+	if [ "$1" = log_end_msg ]; then
+	    log_end_msg 1 || true
+	fi
+	if ! run_by_init; then
+	    log_action_msg "/dev/null is not a character device!" || true
+	fi
+	exit 1
+    fi
+}
+
+check_privsep_dir() {
+    # Create the PrivSep empty dir if necessary
+    if [ ! -d /var/run/ssh_tunnel ]; then
+	mkdir /var/run/ssh_tunnel
+	chmod 0755 /var/run/ssh_tunnel
+    fi
+}
+
+export PATH="${PATH:+$PATH:}/usr/sbin:/sbin"
+
+case "$1" in
+  start)
+	check_privsep_dir
+	check_for_no_start
+	check_dev_null
+	log_daemon_msg "Starting SSH Tunnel Daemon" "ssh_tunnel" || true
+	if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/ssh_tunnel.pid --exec /usr/sbin/ssh_tunnel; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+  stop)
+	log_daemon_msg "Stopping SSH Tunnel Daemon" "ssh_tunnel" || true
+	if start-stop-daemon --stop --quiet --oknodo --pidfile /var/run/ssh_tunnel.pid; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  reload|force-reload)
+	check_for_no_start
+	log_daemon_msg "Reloading SSH Tunnel Daemon's configuration" "ssh_tunnel" || true
+	if start-stop-daemon --stop --signal 1 --quiet --oknodo --pidfile /var/run/ssh_tunnel.pid --exec /usr/sbin/ssh_tunnel; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  restart)
+	check_privsep_dir
+	log_daemon_msg "Restarting SSH Tunnel Daemon" "ssh_tunnel" || true
+	start-stop-daemon --stop --quiet --oknodo --retry 30 --pidfile /var/run/ssh_tunnel.pid
+	check_for_no_start log_end_msg
+	check_dev_null log_end_msg
+	if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/ssh_tunnel.pid --exec /usr/sbin/ssh_tunnel; then
+	    log_end_msg 0 || true
+	else
+	    log_end_msg 1 || true
+	fi
+	;;
+
+  try-restart)
+	check_privsep_dir
+	log_daemon_msg "Restarting SSH Tunnel Daemon" "ssh_tunnel" || true
+	RET=0
+	start-stop-daemon --stop --quiet --retry 30 --pidfile /var/run/ssh_tunnel.pid || RET="$?"
+	case $RET in
+	    0)
+		# old daemon stopped
+		check_for_no_start log_end_msg
+		check_dev_null log_end_msg
+		if start-stop-daemon --start --quiet --oknodo --pidfile /var/run/ssh_tunnel.pid --exec /usr/sbin/ssh_tunnel; then
+		    log_end_msg 0 || true
+		else
+		    log_end_msg 1 || true
+		fi
+		;;
+	    1)
+		# daemon not running
+		log_progress_msg "(not running)" || true
+		log_end_msg 0 || true
+		;;
+	    *)
+		# failed to stop
+		log_progress_msg "(failed to stop)" || true
+		log_end_msg 1 || true
+		;;
+	esac
+	;;
+
+  status)
+	status_of_proc -p /var/run/ssh_tunnel.pid /usr/sbin/ssh_tunnel ssh_tunnel && exit 0 || exit $?
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/ssh {start|stop|reload|force-reload|restart|try-restart|status}" || true
+	exit 1
+esac
+
+exit 0
